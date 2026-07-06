@@ -3,6 +3,7 @@ package com.eventledger.gateway.model;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
@@ -18,35 +19,50 @@ public class Event {
 
     @Id
     @NotBlank(message = "eventId is required")
+    @Schema(description = "Unique identifier for the event", example = "evt-001")
     @Column(name = "event_id", nullable = false, unique = true)
     private String eventId;
 
     @NotBlank(message = "accountId is required")
+    @Schema(description = "The account this event belongs to", example = "acct-123")
     @Column(name = "account_id", nullable = false)
     private String accountId;
 
     @NotBlank(message = "type is required")
     @Pattern(regexp = "CREDIT|DEBIT", message = "type must be CREDIT or DEBIT")
+    @Schema(description = "Transaction type", example = "CREDIT", allowableValues = {"CREDIT", "DEBIT"})
     @Column(nullable = false)
     private String type; // CREDIT or DEBIT
 
     @NotNull(message = "amount is required")
     @DecimalMin(value = "0.0", inclusive = false, message = "amount must be greater than 0")
+    @Schema(description = "Transaction amount", example = "150.00")
     @Column(nullable = false, precision = 15, scale = 2)
     private BigDecimal amount;
 
     @NotBlank(message = "currency is required")
+    @Schema(description = "Currency of the transaction", example = "USD")
     @Column(nullable = false)
     private String currency;
 
     @NotNull(message = "eventTimestamp is required")
+    @Schema(description = "When the event originally occurred", example = "2026-05-15T14:02:11Z")
     @Column(name = "event_timestamp", nullable = false)
     private Instant eventTimestamp;
 
+    @Schema(
+        description = "Optional additional context",
+        type = "object",
+        example = "{\"source\": \"mainframe-batch\", \"batchId\": \"B-9042\"}"
+    )
     @Convert(converter = JsonConverter.class)
     @Column(columnDefinition = "TEXT")
     private Map<String, Object> metadata;
 
+    @Schema(
+        description = "Internal propagation status of the event",
+        accessMode = Schema.AccessMode.READ_ONLY
+    )
     @Column(nullable = false)
     private String status = "RECEIVED"; // RECEIVED or PROPAGATED
 
