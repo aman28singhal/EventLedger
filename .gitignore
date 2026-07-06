@@ -1,0 +1,40 @@
+# Maven
+target/
+**/target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.next
+pom.xml.versionsBackup
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+.mvn/wrapper-maven-out.txt
+
+# IDEs and Editors
+.idea/
+*.iml
+*.ipr
+*.iws
+.settings/
+.classpath
+.project
+.factorypath
+.springBeans
+.recommenders/
+.cursor/
+
+# OS
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Logs
+*.log
+logs/
+**/logs/
+
+# Temporary files
+temp/
+tmp/
+*.plan.md
