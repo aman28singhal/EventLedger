@@ -15,6 +15,7 @@ public class GatewayConfig {
         return builder
                 .setConnectTimeout(Duration.ofSeconds(2))
                 .setReadTimeout(Duration.ofSeconds(2))
+                .additionalInterceptors(new TraceIdInterceptor())
                 .build();
     }
 }
