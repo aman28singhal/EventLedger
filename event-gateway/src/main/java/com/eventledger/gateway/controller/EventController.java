@@ -2,6 +2,8 @@ package com.eventledger.gateway.controller;
 
 import com.eventledger.gateway.model.Event;
 import com.eventledger.gateway.service.EventService;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -14,13 +16,16 @@ import java.util.List;
 public class EventController {
 
     private final EventService eventService;
+    private final Counter requestCounter;
 
-    public EventController(EventService eventService) {
+    public EventController(EventService eventService, MeterRegistry meterRegistry) {
         this.eventService = eventService;
+        this.requestCounter = meterRegistry.counter("eventledger.gateway.requests.total");
     }
 
     @PostMapping
     public ResponseEntity<Event> createEvent(@Valid @RequestBody Event event) {
+        requestCounter.increment();
         EventService.ProcessResult result = eventService.processEvent(event);
         
         if (result.isNew()) {

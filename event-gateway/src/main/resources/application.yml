@@ -21,20 +21,19 @@ account-service:
   url: ${ACCOUNT_SERVICE_URL:http://localhost:8081}
 
 resilience4j:
-  circuitbreaker:
+  retry:
     instances:
       accountService:
-        registerHealthIndicator: true
-        slidingWindowSize: 10
-        minimumNumberOfCalls: 5
-        failureRateThreshold: 50
-        waitDurationInOpenState: 10s
-        permittedNumberOfCallsInHalfOpenState: 3
-        automaticTransitionFromOpenToHalfOpenEnabled: true
-  timelimiter:
-    instances:
-      accountService:
-        timeoutDuration: 2s
+        maxAttempts: 3
+        waitDuration: 200ms
+        exponentialBackoff:
+          enabled: true
+          multiplier: 2
+          randomizationFactor: 0.5
+
+outbox:
+  retry:
+    interval: 5000
 
 management:
   endpoints:

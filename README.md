@@ -108,7 +108,8 @@ Run the JUnit test suite on both projects:
 - `GET /events/{id}`: Retrieve a stored event by ID.
 - `GET /events?account={accountId}`: List events for an account, ordered chronologically by `eventTimestamp`.
 - `GET /health`: Health status.
-- `GET /metrics/eventledger.gateway.events.processed`: Custom Micrometer success/failure counter.
+- `GET /metrics/eventledger.gateway.requests.total`: Custom Micrometer total requests counter.
+- **Swagger UI:** `http://localhost:8080/swagger-ui/index.html` (Interactive API documentation)
 
 ### 2. Account Service (Internal, Port 8081)
 
@@ -117,6 +118,22 @@ Run the JUnit test suite on both projects:
 - `GET /accounts/{accountId}`: Get account transaction list and net balance.
 - `GET /health`: Health status.
 - `GET /metrics/eventledger.account.transactions.applied`: Custom Micrometer transaction counter.
+
+---
+
+## Testing with Swagger UI
+
+The Event Gateway includes a **Swagger UI** for interactive testing.
+
+1. **Start the services** (either via Docker Compose or manually).
+2. **Open the browser** and navigate to:
+   [http://localhost:8080/swagger-ui/index.html](http://localhost:8080/swagger-ui/index.html)
+3. **Submit a Event:**
+   - Under the `/events` endpoint, click **POST**, then click **Try it out**.
+   - Paste the sample JSON payload in the request body and click **Execute**.
+   - You will see the response (`201 Created` or `200 OK` on duplicates) and the `X-Trace-Id` response headers.
+4. **List Events:**
+   - Click on the `GET /events` endpoint, click **Try it out**, fill in the `account` parameter (e.g. `acct-999`), and click **Execute**.
 
 ---
 
@@ -151,7 +168,7 @@ curl -i -X POST http://localhost:8080/events \
   }'
 ```
 
-### 3. Check Account Balance
+### 3. Check Account Balance (Note: only works internally or when running locally on port 8081)
 ```bash
 curl -i http://localhost:8081/accounts/acct-999/balance
 ```
@@ -163,9 +180,11 @@ curl -i http://localhost:8080/events?account=acct-999
 
 ---
 
-## Architectural & Resiliency Decisions
+## Architectural, Resiliency & Observability Decisions
 
-- **Circuit Breaker Choice**: We chose the Resilience4j Circuit Breaker over Simple Retries or Bulkheads alone. When the Account Service is struggling, retries compound load, leading to eventual failure. The circuit breaker detects high failure rates or slow responses and trips, preventing cascading resources exhaustion.
-- **Out-of-Order Handling**: Balances are calculated dynamically using database aggregation (`SUM` query) rather than being incrementally stored in the database. This ensures that even if transactions are inserted out-of-order, the net balance is always correct.
-- **Event Persistence on Failure**: When the Account Service is down, events are still persisted locally in the Gateway with `RECEIVED` status. When re-submitted (or if a retry mechanism is added), the Gateway will re-attempt forwarding without creating a duplicate.
-- **Idempotency**: Both services enforce idempotency at multiple levels — the Gateway checks by `eventId` before saving and forwarding, and the Account Service has a unique constraint on `eventId` with a `DataIntegrityViolationException` fallback for concurrent requests.
+* **Configurable Retry with Exponential Backoff + Jitter:** Instead of a simple retry loops or immediate failures, the `event-gateway` employs a **Resilience4j Retry** mechanism when calling `account-service`. Retries are configured with an exponential backoff (`multiplier: 2`) and random jitter (`randomizationFactor: 0.5`) to prevent thundering herd conditions when recovering from downstream outages.
+* **Transactional Outbox Pattern (Eventual Consistency):** If the `account-service` is down, incoming events are still accepted by the Gateway, saved with a status of `RECEIVED`, and returned to the client as a `503 Service Unavailable`. A background `@Scheduled` scheduler (`OutboxRetryScheduler`) periodically polls for pending `RECEIVED` events and attempts to forward them sequentially in chronological order. The job breaks on the first error to guarantee order preservation.
+* **Out-of-Order Handling:** Balances are calculated dynamically using database aggregation (`SUM` query) rather than being incrementally stored in the database. This ensures that even if transactions are inserted out-of-order, the net balance is always correct.
+* **Idempotency:** Both services enforce idempotency at multiple levels — the Gateway checks by `eventId` before saving and forwarding, and the Account Service has a unique constraint on `eventId` with a `DataIntegrityViolationException` fallback for concurrent requests.
+* **OpenAPI Integration:** Embedded `springdoc-openapi` to provide interactive, easy-to-use Swagger documentation for reviewers.
+* **Observability:** Custom Micrometer metrics track total request volume on the Gateway (`eventledger.gateway.requests.total`) and transaction count on the Account Service (`eventledger.account.transactions.applied`). All service boundaries propagate a generated `X-Trace-Id` header for end-to-end distributed tracing.

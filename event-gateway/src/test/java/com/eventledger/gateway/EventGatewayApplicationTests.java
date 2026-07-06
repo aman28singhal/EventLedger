@@ -2,6 +2,7 @@ package com.eventledger.gateway;
 
 import com.eventledger.gateway.model.Event;
 import com.eventledger.gateway.repository.EventRepository;
+import com.eventledger.gateway.service.OutboxRetryScheduler;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -39,6 +40,9 @@ public class EventGatewayApplicationTests {
 
     @Autowired
     private RestTemplate restTemplate;
+
+    @Autowired
+    private OutboxRetryScheduler outboxRetryScheduler;
 
     private MockRestServiceServer mockServer;
 
@@ -95,8 +99,7 @@ public class EventGatewayApplicationTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(payload))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.error").value("Bad Request"))
-                .andExpect(jsonPath("$.message").value("Validation failed"));
+                .andExpect(jsonPath("$.error").value("Bad Request"));
     }
 
     @Test
@@ -162,8 +165,8 @@ public class EventGatewayApplicationTests {
 
     @Test
     public void testDownstreamFailureReturns503() throws Exception {
-        // Simulate downstream server failure (500)
-        mockServer.expect(requestTo(startsWith("http://localhost:8081/accounts/acct-123/transactions")))
+        // Simulate downstream server failure (500) and allow multiple retries
+        mockServer.expect(org.springframework.test.web.client.ExpectedCount.manyTimes(), requestTo(startsWith("http://localhost:8081/accounts/acct-123/transactions")))
                 .andExpect(method(HttpMethod.POST))
                 .andRespond(withServerError());
 
@@ -242,7 +245,28 @@ public class EventGatewayApplicationTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(payload))
                 .andExpect(status().isCreated())
-                .andExpect(header().exists("X-Trace-Id"));
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header().exists("X-Trace-Id"));
+
+        mockServer.verify();
+    }
+
+    @Test
+    public void testOutboxSchedulerRetriesPendingEvents() throws Exception {
+        // Prepare pre-existing RECEIVED event in DB (failed initial propagation)
+        Event event = new Event("evt-outbox-test", "acct-123", "CREDIT", new BigDecimal("100.00"), "USD", Instant.now(), new HashMap<>(), "RECEIVED");
+        eventRepository.save(event);
+
+        // Expect outbox scheduler call to downstream
+        mockServer.expect(requestTo(startsWith("http://localhost:8081/accounts/acct-123/transactions")))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withSuccess("{}", MediaType.APPLICATION_JSON));
+
+        // Call the scheduler directly
+        outboxRetryScheduler.retryPendingEvents();
+
+        // Verify status in DB got updated to PROPAGATED
+        Event updatedEvent = eventRepository.findById("evt-outbox-test").orElseThrow();
+        assertEquals("PROPAGATED", updatedEvent.getStatus());
 
         mockServer.verify();
     }

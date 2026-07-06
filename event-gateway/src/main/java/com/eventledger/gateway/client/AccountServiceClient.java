@@ -2,7 +2,7 @@ package com.eventledger.gateway.client;
 
 import com.eventledger.gateway.exception.DownstreamServiceUnavailableException;
 import com.eventledger.gateway.model.Event;
-import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import io.github.resilience4j.retry.annotation.Retry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -28,7 +28,7 @@ public class AccountServiceClient {
         this.accountServiceUrl = accountServiceUrl;
     }
 
-    @CircuitBreaker(name = "accountService", fallbackMethod = "fallbackForwardTransaction")
+    @Retry(name = "accountService")
     public void forwardTransaction(Event event) {
         String url = accountServiceUrl + "/accounts/" + event.getAccountId() + "/transactions";
         log.info("Forwarding transaction to Account Service: url={}, eventId={}", url, event.getEventId());
@@ -45,12 +45,12 @@ public class AccountServiceClient {
         headers.setContentType(MediaType.APPLICATION_JSON);
 
         HttpEntity<Map<String, Object>> request = new HttpEntity<>(payload, headers);
-        restTemplate.postForEntity(url, request, Object.class);
-        log.info("Successfully forwarded eventId={} to Account Service", event.getEventId());
-    }
-
-    public void fallbackForwardTransaction(Event event, Throwable t) {
-        log.error("Circuit breaker triggered fallback for eventId={}. Error: {}", event.getEventId(), t.getMessage(), t);
-        throw new DownstreamServiceUnavailableException("Account service is temporarily unavailable. Please try again later.", t);
+        try {
+            restTemplate.postForEntity(url, request, Object.class);
+            log.info("Successfully forwarded eventId={} to Account Service", event.getEventId());
+        } catch (Exception e) {
+            log.error("Failed to forward eventId={} to Account Service. Error: {}", event.getEventId(), e.getMessage());
+            throw new DownstreamServiceUnavailableException("Account service is temporarily unavailable. Please try again later.", e);
+        }
     }
 }
